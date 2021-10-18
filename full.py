@@ -1,38 +1,64 @@
 import streamlit as st
-import datetime
+from datetime import date
 
-st.title("Form for the Users")
-st.write("Here, you can answer to some questions in this form.")
+import yfinance as yf
+from fbprophet import Prophet
+from fbprophet.plot import plot_plotly
+from plotly import graph_objs as go
 
-user_id = st.text_input("ID", value="Your ID", max_chars=7)
-info = st.text_area("Share some information about you", "Put information here",
-                    help='You can write about your hobbies or family')
-age = st.number_input("Age", min_value=18, max_value=100, step=1)
-birth_date = st.date_input("Date of Birth", min_value=datetime.date(1921, 1, 1),
-                           max_value=datetime.date(2003, 12, 31))
-smoke = st.checkbox("Do you smoke?")
-genre = st.radio("Which movie genre do you like?",
-                 options=['horror', 'adventure', 'romantic'])
-weight = st.slider("Choose your weight", min_value=40., max_value=150., step=0.5)
-physical_form = st.selectbox("Select level of your physical condition",
-                             options=["Bad", "Normal", "Good"])
-colors = st.multiselect('What are your favorite colors',
-                        options=['Green', 'Yellow', 'Red', 'Blue', 'Pink'])
-image = st.file_uploader("Upload your photo", type=['jpg', 'png'])
+START = "2015-01-01"
+TODAY = date.today().strftime("%Y-%m-%d")
 
-col1, col2 = st.beta_columns(2)
-with col1:
-    st.image("https://static.streamlit.io/examples/cat.jpg", width=300)
-    st.button("Like cats")
-with col2:
-    st.image("https://static.streamlit.io/examples/dog.jpg", width=355)
-    st.button("Like dogs")
+st.title('Stock Forecast App')
 
-submit = st.button("Submit")
+stocks = ('GOOG', 'AAPL', 'MSFT', 'GME')
+selected_stock = st.selectbox('Select dataset for prediction', stocks)
 
-if submit:
-    st.write("You submitted the form")
+n_years = st.slider('Years of prediction:', 1, 4)
+period = n_years * 365
 
-click = st.sidebar.button('Click me!')
-if click:
-    st.sidebar.write("You clicked the button")
+
+@st.cache
+def load_data(ticker):
+    data = yf.download(ticker, START, TODAY)
+    data.reset_index(inplace=True)
+    return data
+
+    
+data_load_state = st.text('Loading data...')
+data = load_data(selected_stock)
+data_load_state.text('Loading data... done!')
+
+st.subheader('Raw data')
+st.write(data.tail())
+
+# Plot raw data
+def plot_raw_data():
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=data['Date'], y=data['Open'], name="stock_open"))
+    fig.add_trace(go.Scatter(x=data['Date'], y=data['Close'], name="stock_close"))
+    fig.layout.update(title_text='Time Series data with Rangeslider', xaxis_rangeslider_visible=True)
+    st.plotly_chart(fig)
+    
+plot_raw_data()
+
+# Predict forecast with Prophet.
+df_train = data[['Date','Close']]
+df_train = df_train.rename(columns={"Date": "ds", "Close": "y"})
+
+m = Prophet()
+m.fit(df_train)
+future = m.make_future_dataframe(periods=period)
+forecast = m.predict(future)
+
+# Show and plot forecast
+st.subheader('Forecast data')
+st.write(forecast.tail())
+    
+st.write(f'Forecast plot for {n_years} years')
+fig1 = plot_plotly(m, forecast)
+st.plotly_chart(fig1)
+
+st.write("Forecast components")
+fig2 = m.plot_components(forecast)
+st.write(fig2)
